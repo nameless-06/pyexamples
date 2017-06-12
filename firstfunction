@@ -1,0 +1,60 @@
+def hello():
+    print ("My first python function\n")
+    
+hello()
+
+##Passing arguments to functions
+def hello1(info):
+    print (info)
+
+hello1("Another function to Passing information to functions : Vikram\n")
+
+##Sending arguments by keywords
+def addit(a,b):
+    print("Sending arguments by keywords, shows adding of the two keywords ", a,"+",b,"=",(a+b),"\n")
+
+addit(2,3)
+
+##Giving function arguments a default value
+
+def hello3(a="You have not supplied a value \n"):
+    print(a)
+
+hello3()
+
+##Creating functions with variable levels of arguments
+
+def hello4(argcount, *VarArgs):
+    print("You passed ", argcount, " arguments to the function")
+    for i in VarArgs:
+        print (i)
+
+hello4(3,"Vikram","Arsenal","Sanchez\n")
+
+##Returning information from function
+
+def doadd(a,b):
+    return a+b
+
+print (doadd(2, 8),"\n")
+
+##comparing function output
+
+def compare(a,b):
+    return a+b
+
+print("The sum of 2+3 is ",compare(2,3)," And the sum of 4+1 is ",compare(4,1), " which is ",compare(2,3)==compare(4,1),"\n")
+
+##Getting user Input
+
+name=input("What is your name: ")
+if name=="Chinmay":
+    print("Hello ", name,"You are not a Arsenal, no good!! \n")
+elif name=="Vikram":
+    print("Hello ", name," Since you are a Gunner, you are cool!! \n")
+else:
+    print("Hello ",name," If not an Gunner, be one \n")
+
+
+
+        
