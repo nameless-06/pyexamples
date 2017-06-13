@@ -49,7 +49,7 @@ print("The sum of 2+3 is ",compare(2,3)," And the sum of 4+1 is ",compare(4,1), 
 
 name=input("What is your name: ")
 if name=="Chinmay":
-    print("Hello ", name,"You are not a Arsenal, no good!! \n")
+    print("Hello ", name,"You are not a Arsenal fan, no good!! \n")
 elif name=="Vikram":
     print("Hello ", name," Since you are a Gunner, you are cool!! \n")
 else:
