@@ -55,3 +55,81 @@ elif name=="Vikram":
 else:
     print("Hello ",name," If not an Gunner, be one \n")
 
+import boto3
+import time
+
+class SpotFleetMonitor:
+    def __init__(self, spot_fleet_request_id):
+        self.spot_fleet_request_id = spot_fleet_request_id
+        self.ec2_client = boto3.client('ec2')
+
+    def get_fleet_request_details(self):
+        """
+        Get the details of the Spot Fleet request including the target capacity.
+        """
+        response = self.ec2_client.describe_spot_fleet_requests(SpotFleetRequestIds=[self.spot_fleet_request_id])
+        if not response['SpotFleetRequestConfigs']:
+            print(f"Spot Fleet request {self.spot_fleet_request_id} not found.")
+            return None
+        fleet_config = response['SpotFleetRequestConfigs'][0]['SpotFleetRequestConfig']
+        return fleet_config
+
+    def get_fleet_instances(self):
+        """
+        Get the instance IDs for the instances in the given spot fleet request.
+        """
+        response = self.ec2_client.describe_spot_fleet_instances(SpotFleetRequestId=self.spot_fleet_request_id)
+        instance_ids = [instance['InstanceId'] for instance in response['ActiveInstances']]
+        return instance_ids
+
+    def get_instance_cores(self, instance_ids):
+        """
+        Retrieve the instance types and number of vCPUs (cores) for each instance in the list.
+        """
+        if not instance_ids:
+            return 0
+
+        response = self.ec2_client.describe_instances(InstanceIds=instance_ids)
+        total_cores = 0
+
+        for reservation in response['Reservations']:
+            for instance in reservation['Instances']:
+                instance_type = instance['InstanceType']
+                # Get the number of vCPUs for the instance type
+                instance_details = self.ec2_client.describe_instance_types(InstanceTypes=[instance_type])
+                vcpus = instance_details['InstanceTypes'][0]['VCpuInfo']['DefaultVCpus']
+                total_cores += vcpus
+
+        return total_cores
+
+    def monitor_spot_fleet(self, polling_interval=30):
+        """
+        Monitor the Spot Fleet request and print the total number of requested and actual vCPUs (cores).
+        """
+        fleet_config = self.get_fleet_request_details()
+
+        if fleet_config is None:
+            print(f"Could not retrieve the spot fleet request {self.spot_fleet_request_id}.")
+            return
+
+        # Calculate requested cores (target capacity)
+        if fleet_config['TargetCapacityUnitType'] == 'vcpu':
+            requested_cores = fleet_config['TargetCapacity']
+        else:
+            # If TargetCapacityUnitType is 'instance', assume a default number of cores (e.g., 4 cores per instance)
+            requested_cores = fleet_config['TargetCapacity'] * 4
+
+        print(f"Requested cores (target capacity): {requested_cores}")
+
+        # Monitor in a loop
+        while True:
+            print(f"Monitoring Spot Fleet: {self.spot_fleet_request_id}...")
+
+            # Get instances from the fleet
+            instance_ids = self.get_fleet_instances()
+            actual_cores = self.get_instance_cores(instance_ids)
+
+            print(f"Actual cores coming up: {actual_cores} / {requested_cores}")
+
+            # Poll every polling_interval seconds
+            time.sleep(polling_interval)
