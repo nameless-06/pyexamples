@@ -55,6 +55,71 @@ elif name=="Vikram":
 else:
     print("Hello ",name," If not an Gunner, be one \n")
 
+# data.tf
+
+# Get the caller identity (AWS user executing Terraform)
+data "aws_caller_identity" "current" {}
+
+# Capture the shell user ID (UNIX user executing Terraform)
+data "external" "shell_user" {
+  program = ["sh", "-c", "echo {\"user_id\": \"$(id -u -n)\"}"]
+}
 
 
-        
+
+      # output.tf
+
+# Write the Spot Fleet request ID, AWS user ID, and shell user ID to /tmp/test
+resource "local_file" "spot_fleet_mapping" {
+  content  = <<EOF
+Spot Fleet Request ID: ${aws_spot_fleet_request.my_spot_fleet.id}
+AWS User ID: ${data.aws_caller_identity.current.user_id}
+Shell User ID: ${data.external.shell_user.result.user_id}
+EOF
+
+  filename = "/tmp/test"
+  # Ensure the file is appended to if it already exists
+  file_permission = "0644"
+}
+
+# Use a null_resource to run AWS CLI commands
+resource "null_resource" "get_spot_fleet_instances" {
+  provisioner "local-exec" {
+    command = <<EOT
+      # Load the module
+      module load test
+
+      # Fetch Spot Fleet instance IDs
+      INSTANCE_IDS=$(aws ec2 describe-instances \
+        --filters "Name=spot-instance-request-id,Values=${aws_spot_fleet_request.my_spot_fleet.id}" \
+        --query "Reservations[*].Instances[*].InstanceId" \
+        --output text)
+
+      # Append instance IDs to the file
+      echo "Spot Fleet Instance IDs: $INSTANCE_IDS" >> /tmp/test
+    EOT
+  }
+
+  depends_on = [aws_spot_fleet_request.my_spot_fleet]
+}
+
+# Output the Spot Fleet request ID
+output "spot_fleet_request_id" {
+  value = aws_spot_fleet_request.my_spot_fleet.id
+}
+
+# Output the AWS user ID
+output "aws_user_id" {
+  value = data.aws_caller_identity.current.user_id
+}
+
+# Output the shell user ID
+output "shell_user_id" {
+  value = data.external.shell_user.result.user_id
+}
+
+# Note that instance IDs are appended to /tmp/test
+output "spot_fleet_instance_ids" {
+  value = "Instance IDs are appended to /tmp/test by the local-exec provisioner."
+}
+&  
