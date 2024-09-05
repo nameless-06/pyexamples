@@ -54,3 +54,37 @@ elif name=="Vikram":
     print("Hello ", name," Since you are a Gunner, you are cool!! \n")
 else:
     print("Hello ",name," If not an Gunner, be one \n")
+
+import argparse
+from spot_fleet_monitor import SpotFleetMonitor  # Import the SpotFleetMonitor class
+
+def main():
+    parser = argparse.ArgumentParser(description="Spot Fleet Monitor and Script Runner")
+
+    # Add argument to show instance cores
+    parser.add_argument('--show-spot-incs', metavar='SPOT_FLEET_ID', type=str,
+                        help='Spot Fleet ID to monitor instances and cores')
+
+    # Other arguments (e.g., for running your previous terraform tasks)
+    parser.add_argument('--ondemand', type=str, help='Arguments for ondemand tasks')
+    parser.add_argument('--spot_fleet', type=str, help='Arguments for spot_fleet tasks')
+
+    args = parser.parse_args()
+
+    # If the --show-spot-incs argument is provided, run the SpotFleetMonitor
+    if args.show_spot_incs:
+        spot_fleet_monitor = SpotFleetMonitor(args.show_spot_incs)
+        spot_fleet_monitor.monitor_spot_fleet()
+
+    # You can add additional handling for other arguments like ondemand and spot_fleet here
+    # This would be where you execute the terraform or other commands, as in your original script.
+    if args.ondemand:
+        print(f"Running ondemand tasks with args: {args.ondemand}")
+        # Add your ondemand task execution code here
+    
+    if args.spot_fleet:
+        print(f"Running spot_fleet tasks with args: {args.spot_fleet}")
+        # Add your spot_fleet task execution code here
+
+if __name__ == "__main__":
+    main()
