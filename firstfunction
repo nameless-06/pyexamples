@@ -55,3 +55,28 @@ elif name=="Vikram":
 else:
     print("Hello ",name," If not an Gunner, be one \n")
 
+# Sample list of instances for a region
+instance_list = [
+    "t2.micro", "t2.small", "t3.micro", "t3.small", "t3.medium", 
+    "m5.large", "m5.xlarge", "c5.large", "c5.xlarge", "t3a.nano"
+]
+
+# Function to filter instances by family
+def filter_instances_by_family(instance_list, family):
+    return [instance for instance in instance_list if instance.startswith(family)]
+
+# Ask the user for the instance family
+family_input = input("Enter the instance family (e.g., t3): ")
+
+# Get the filtered instances
+filtered_instances = filter_instances_by_family(instance_list, family_input)
+
+# Display the results
+if filtered_instances:
+    print(f"Instances from the family '{family_input}':")
+    for instance in filtered_instances:
+        print(instance)
+else:
+    print(f"No instances found for the family '{family_input}'")
+
+
