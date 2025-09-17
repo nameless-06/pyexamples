@@ -53,4 +53,34 @@ if name=="Chinmay":
 elif name=="Vikram":
     print("Hello ", name," Since you are a Gunner, you are cool!! \n")
 else:
-    print("Hello ",name," If not an Gunner, be one \n")
+    print("Hello ",name," If not an Gunner, be 
+one \n")
+
+
+#!/bin/bash
+
+# Usage: ./parse_ls_log.sh /path/to/ls_time.log
+
+LOGFILE="$1"
+
+awk '
+/^==== Run on/ {run_date=$0}
+/^Chosen subdirectory:/ {dir=$0}
+/^real/ {
+    # Extract time string like "0m9.234s"
+    match($0, /([0-9]+)m([0-9]+\.[0-9]+)s/, a)
+    minutes=a[1]
+    seconds=a[2]
+    total=minutes*60+seconds
+
+    if (total > 8) {
+        print run_date
+        print dir
+        print "real time: " total " seconds"
+        print ""
+    }
+}' "$LOGFILE"
+
+
+
+
