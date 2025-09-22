@@ -57,25 +57,31 @@ else:
 one \n")
 
 
-import re
+import csv
+from datetime import datetime
 
-results = []
+with open("dd_speed.csv", "w", newline="") as csvfile:
+    writer = csv.writer(csvfile)
+    writer.writerow(["time", "speed_MBps"])  # header
+    
+    with open("dd_output.log", "r") as f:
+        date = None
+        for line in f:
+            if line.startswith("Ran on date"):
+                raw_date = line.strip().replace("Ran on date ", "")
+                # Parse "Mon Sep 22 12:00:01 UTC 2025" to ISO
+                dt = datetime.strptime(raw_date, "%a %b %d %H:%M:%S %Z %Y")
+                date = dt.isoformat()
+            elif "copied" in line and "s," in line:
+                speed_raw = line.strip().split(",")[-1].strip()
+                num, unit = speed_raw.split()
 
-with open("dd_output.log", "r") as f:
-    date = None
-    for line in f:
-        if line.startswith("Ran on"):
-            date = line.strip().replace("Ran on ", "")
-        elif "copied" in line and "s," in line:
-            # speed is the last item after the comma
-            speed = line.strip().split(",")[-1].strip()
-            if date:
-                results.append((date, speed))
-                date = None  # reset for next block
+                num = float(num)
+                if unit.upper() == "KB/S":
+                    num = num / 1024
+                elif unit.upper() == "GB/S":
+                    num = num * 1024
 
-# Print results
-for d, s in results:
-    print(f"{d} -> {s}")
-
-
-
+                if date:
+                    writer.writerow([date, num])
+                    date = None
