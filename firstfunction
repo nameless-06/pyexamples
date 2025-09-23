@@ -57,66 +57,6 @@ else:
 one \n")
 
 
-import re
-import csv
-from pathlib import Path
-from datetime import datetime
 
-log_file = "nfs_check_output.log"
-
-date_re = re.compile(r"\*{6}Ran on (.*)\*{6}")
-dir_re = re.compile(r"Dir:\s+(.*)")
-real_re = re.compile(r"real\s+(\d+m\d+\.\d+s|\d+\.\d+s|\d+m\d+s|\d+s)")
-
-def time_to_seconds(t: str) -> float:
-    t = t.strip("s")
-    if "m" in t:
-        minutes, seconds = t.split("m")
-        return int(minutes) * 60 + float(seconds)
-    return float(t)
-
-out_dir = Path("csv_dir")
-out_dir.mkdir(exist_ok=True)
-
-current_date = None
-current_path = None
-
-with open(log_file) as f:
-    for line in f:
-        line = line.strip()
         
-        # detect new timestamp block
-        m = date_re.match(line)
-        if m:
-            raw_date = m.group(1).strip()
-            try:
-                dt = datetime.strptime(raw_date, "%a %b %d %H:%M:%S %Z %Y")
-            except ValueError:
-                dt = datetime.strptime(raw_date, "%a %b %d %H:%M:%S %Y")
-            current_date = dt.strftime("%Y-%m-%d %H:%M:%S")
-            continue
-        
-        # detect directory path
-        m = dir_re.match(line)
-        if m:
-            path = m.group(1).strip()
-            # ignore last directory → keep everything before the final "/"
-            base_path = "/".join(path.strip("/").split("/")[:-1])
-            current_path = base_path.replace("/", "_")  # safe filename
-            continue
-        
-        # detect real time
-        m = real_re.match(line)
-        if m and current_date and current_path:
-            real_sec = time_to_seconds(m.group(1))
-            
-            csv_file = out_dir / f"{current_path}.csv"
-            new_file = not csv_file.exists()
-            
-            with open(csv_file, "a", newline="") as csvf:
-                writer = csv.writer(csvf)
-                if new_file:
-                    writer.writerow(["Date", "Real"])
-                writer.writerow([current_date, real_sec])
-            
-            current_path = None
+                
