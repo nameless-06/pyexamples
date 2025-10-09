@@ -120,5 +120,36 @@ for vol, rows in results.items():
         writer.writerow(["Date", "Real"])
         writer.writerows(rows)
 
+---
+- name: Check user IDs on all servers
+  hosts: all
+  gather_facts: no
+  vars:
+    user_file: users.txt
+
+  tasks:
+    - name: Read list of user IDs from file
+      delegate_to: localhost
+      run_once: true
+      slurp:
+        src: "{{ user_file }}"
+      register: user_list_raw
+
+    - name: Set fact with user list
+      set_fact:
+        users: "{{ user_list_raw.content | b64decode | splitlines() }}"
+
+    - name: Run 'id' command for each user
+      command: "id {{ item }}"
+      loop: "{{ users }}"
+      register: user_id_results
+      ignore_errors: yes
+
+    - name: Display results
+      debug:
+        msg: |
+          Server: {{ inventory_hostname }}
+          {{ user_id_results.results | map(attribute='stdout') | join('\n') }}
+
         
                 
