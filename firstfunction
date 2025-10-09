@@ -128,16 +128,15 @@ for vol, rows in results.items():
     user_file: users.txt
 
   tasks:
-    - name: Read list of user IDs from file
+    - name: Read list of user IDs from file (on control node)
       delegate_to: localhost
       run_once: true
-      slurp:
-        src: "{{ user_file }}"
-      register: user_list_raw
+      command: cat {{ user_file }}
+      register: user_file_contents
 
-    - name: Set fact with user list
+    - name: Set user list fact
       set_fact:
-        users: "{{ user_list_raw.content | b64decode | splitlines() }}"
+        users: "{{ user_file_contents.stdout_lines }}"
 
     - name: Run 'id' command for each user
       command: "id {{ item }}"
@@ -149,7 +148,9 @@ for vol, rows in results.items():
       debug:
         msg: |
           Server: {{ inventory_hostname }}
-          {{ user_id_results.results | map(attribute='stdout') | join('\n') }}
+          {% for r in user_id_results.results %}
+          - User: {{ r.item }} => {{ r.stdout | default(r.stderr) }}
+          {% endfor %}
 
         
                 
