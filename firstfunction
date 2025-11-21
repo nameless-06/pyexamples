@@ -152,13 +152,135 @@ for vol, rows in results.items():
           - User: {{ r.item }} => {{ r.stdout | default(r.stderr) }}
           {% endfor %}
 
-FSX_ID="fs-0123456789abcdef0"
+#!/usr/bin/env python3
+"""
+fsx_vol_util.py
 
-aws fsx describe-volumes \
-  --filters Name=file-system-id,Values="$FSX_ID" \
-  --query "Volumes[?CapacityProvisioned>`0` && ((CapacityProvisioned-CapacityUsed)/CapacityProvisioned) < `0.05`].[Name,VolumeId,CapacityProvisioned,CapacityUsed,FreePercent: ((CapacityProvisioned-CapacityUsed)/CapacityProvisioned)*`100`]" \
-  --output table
+List FSx for ONTAP volumes that are >= 90% utilized, grouped by filesystem.
+Requires: boto3 installed and valid AWS credentials in environment/profile.
+"""
+
+import boto3
+import math
+import sys
+
+THRESHOLD_PERCENT = 90.0  # show volumes >= this utilization
 
 
-        
+def human(n):
+    """Simple human-friendly formatter for numbers (no external libs)."""
+    try:
+        n = float(n)
+    except Exception:
+        return "-"
+    if n >= 1 << 40:
+        return f"{n / (1 << 40):.2f} Ti"
+    if n >= 1 << 30:
+        return f"{n / (1 << 30):.2f} Gi"
+    if n >= 1 << 20:
+        return f"{n / (1 << 20):.2f} Mi"
+    if n >= 1 << 10:
+        return f"{n / (1 << 10):.2f} Ki"
+    return f"{n:.0f}"
+
+
+def print_table(rows, headers):
+    """Print a simple ASCII table."""
+    # compute column widths
+    widths = [len(h) for h in headers]
+    for r in rows:
+        for i, c in enumerate(r):
+            widths[i] = max(widths[i], len(str(c)))
+    # header
+    hdr = "  ".join(h.ljust(widths[i]) for i, h in enumerate(headers))
+    sep = "  ".join("-" * widths[i] for i in range(len(headers)))
+    print(hdr)
+    print(sep)
+    for r in rows:
+        print("  ".join(str(r[i]).ljust(widths[i]) for i in range(len(r))))
+    print()
+
+
+def get_all_filesystems(fsx):
+    """Return list of file systems (paginated)."""
+    out = []
+    paginator = fsx.get_paginator("describe_file_systems")
+    for page in paginator.paginate():
+        fss = page.get("FileSystems", [])
+        for fs in fss:
+            # only ONTAP
+            if fs.get("FileSystemType") == "ONTAP":
+                out.append(fs)
+    return out
+
+
+def get_volumes_for_fs(fsx, fs_id):
+    """Return list of volumes for a given filesystem id (handles pagination)."""
+    vols = []
+    paginator = fsx.get_paginator("describe_volumes")
+    for page in paginator.paginate(Filters=[{"Name": "file-system-id", "Values": [fs_id]}]):
+        vols.extend(page.get("Volumes", []))
+    return vols
+
+
+def safe_float(v):
+    try:
+        return float(v)
+    except Exception:
+        return 0.0
+
+
+def main():
+    fsx = boto3.client("fsx")
+
+    try:
+        filesystems = get_all_filesystems(fsx)
+    except Exception as e:
+        print("ERROR: cannot describe FSx filesystems:", e, file=sys.stderr)
+        sys.exit(1)
+
+    if not filesystems:
+        print("No FSx ONTAP filesystems found.")
+        return
+
+    for fs in filesystems:
+        fs_id = fs.get("FileSystemId", "-")
+        fs_name = fs.get("Name") or "-"
+        print(f"FileSystem: {fs_id}    Name: {fs_name}")
+
+        try:
+            volumes = get_volumes_for_fs(fsx, fs_id)
+        except Exception as e:
+            print(f"  ERROR: cannot describe volumes for {fs_id}: {e}\n")
+            continue
+
+        rows = []
+        for vol in volumes:
+            cap_prov = safe_float(vol.get("CapacityProvisioned"))
+            cap_used = safe_float(vol.get("CapacityUsed"))
+            # skip zero-provisioned volumes (avoid divide-by-zero)
+            if cap_prov <= 0:
+                continue
+            util = (cap_used / cap_prov) * 100.0
+            if util >= THRESHOLD_PERCENT:
+                name = vol.get("Name") or "-"
+                vid = vol.get("VolumeId") or "-"
+                rows.append([
+                    name,
+                    vid,
+                    human(cap_prov),
+                    human(cap_used),
+                    f"{util:.2f}%"
+                ])
+
+        if rows:
+            headers = ["Name", "VolumeId", "Provisioned", "Used", "Utilization"]
+            print_table(rows, headers)
+        else:
+            print(f"  No volumes >= {THRESHOLD_PERCENT:.0f}% utilization.\n")
+
+
+if __name__ == "__main__":
+    main()
+
                 
