@@ -152,5 +152,13 @@ for vol, rows in results.items():
           - User: {{ r.item }} => {{ r.stdout | default(r.stderr) }}
           {% endfor %}
 
+FSX_ID="fs-0123456789abcdef0"
+
+aws fsx describe-volumes \
+  --filters Name=file-system-id,Values="$FSX_ID" \
+  --query "Volumes[?CapacityProvisioned>`0` && ((CapacityProvisioned-CapacityUsed)/CapacityProvisioned) < `0.05`].[Name,VolumeId,CapacityProvisioned,CapacityUsed,FreePercent: ((CapacityProvisioned-CapacityUsed)/CapacityProvisioned)*`100`]" \
+  --output table
+
+
         
                 
