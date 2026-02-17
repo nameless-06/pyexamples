@@ -57,230 +57,40 @@ else:
 one \n")
 
 
-import re
-import csv
-from pathlib import Path
-from datetime import datetime
-from collections import defaultdict
+#!/bin/bash
 
-log_file = "nfs_check_output.log"
+# Define constants
+NODE_ID="$SLURM_NODENAME"
+MAX_RETRIES=3
+SLEEP_INTERVAL=2
+SQUEUE_PATH="/usr/bin/squeue"
 
-date_re = re.compile(r"\*{6}Ran on (.*)\*{6}")
-dir_re = re.compile(r"Dir:\s+(.*)")
-real_re = re.compile(r"real\s+(\d+m\d+\.\d+s|\d+\.\d+s|\d+m\d+s|\d+s)")
+# 1. Allow a brief moment for the controller to catch up
+sleep 1
 
-def time_to_seconds(t: str) -> float:
-    t = t.strip("s")
-    if "m" in t:
-        minutes, seconds = t.split("m")
-        return int(minutes) * 60 + float(seconds)
-    return float(t)
+for ((i=1; i<=MAX_RETRIES; i++)); do
+    # Count jobs that are NOT the one currently finishing
+    # We exclude the current job ID ($SLURM_JOB_ID) specifically
+    OTHER_JOBS=$($SQUEUE_PATH -w "$NODE_ID" -h -t R,CF,CG | grep -v "$SLURM_JOBID" | wc -l)
 
-out_dir = Path("csv_dir")
-out_dir.mkdir(exist_ok=True)
+    if [ "$OTHER_JOBS" -gt 0 ]; then
+        # Another job is definitely there. Exit immediately.
+        exit 0
+    fi
 
-# store results before writing
-results = defaultdict(list)
+    # If we see 0 other jobs, wait and re-verify to be sure no new job was just scheduled
+    sleep "$SLEEP_INTERVAL"
+done
 
-current_date = None
-current_path = None
+# 2. Final verification: If we reached here and count is still 0, the node is idle.
+FINAL_CHECK=$($SQUEUE_PATH -w "$NODE_ID" -h -t R,CF,CG | grep -v "$SLURM_JOBID" | wc -l)
 
-with open(log_file) as f:
-    for line in f:
-        line = line.strip()
+if [ "$FINAL_CHECK" -eq 0 ]; then
+    # Run your test script
+    /usr/local/bin/node_health_check.sh >> /var/log/slurm/node_test.log 2>&1
+fi
+
+
         
-        m = date_re.match(line)
-        if m:
-            raw_date = m.group(1).strip()
-            try:
-                dt = datetime.strptime(raw_date, "%a %b %d %H:%M:%S %Z %Y")
-            except ValueError:
-                dt = datetime.strptime(raw_date, "%a %b %d %H:%M:%S %Y")
-            current_date = dt.strftime("%Y-%m-%d %H:%M:%S")
-            continue
-        
-        m = dir_re.match(line)
-        if m:
-            path = m.group(1).strip()
-            base_path = "/".join(path.strip("/").split("/")[:-1])
-            current_path = base_path.replace("/", "_")
-            continue
-        
-        m = real_re.match(line)
-        if m and current_date and current_path:
-            real_sec = time_to_seconds(m.group(1))
-            results[current_path].append((current_date, real_sec))
-            current_path = None
-
-# write fresh CSVs
-for vol, rows in results.items():
-    csv_file = out_dir / f"{vol}.csv"
-    with open(csv_file, "w", newline="") as csvf:
-        writer = csv.writer(csvf)
-        writer.writerow(["Date", "Real"])
-        writer.writerows(rows)
-
----
-- name: Check user IDs on all servers
-  hosts: all
-  gather_facts: no
-  vars:
-    user_file: users.txt
-
-  tasks:
-    - name: Read list of user IDs from file (on control node)
-      delegate_to: localhost
-      run_once: true
-      command: cat {{ user_file }}
-      register: user_file_contents
-
-    - name: Set user list fact
-      set_fact:
-        users: "{{ user_file_contents.stdout_lines }}"
-
-    - name: Run 'id' command for each user
-      command: "id {{ item }}"
-      loop: "{{ users }}"
-      register: user_id_results
-      ignore_errors: yes
-
-    - name: Display results
-      debug:
-        msg: |
-          Server: {{ inventory_hostname }}
-          {% for r in user_id_results.results %}
-          - User: {{ r.item }} => {{ r.stdout | default(r.stderr) }}
-          {% endfor %}
-
-#!/usr/bin/env python3
-"""
-fsx_vol_util.py
-
-List FSx for ONTAP volumes that are >= 90% utilized, grouped by filesystem.
-Requires: boto3 installed and valid AWS credentials in environment/profile.
-"""
-
-import boto3
-import math
-import sys
-
-THRESHOLD_PERCENT = 90.0  # show volumes >= this utilization
-
-
-def human(n):
-    """Simple human-friendly formatter for numbers (no external libs)."""
-    try:
-        n = float(n)
-    except Exception:
-        return "-"
-    if n >= 1 << 40:
-        return f"{n / (1 << 40):.2f} Ti"
-    if n >= 1 << 30:
-        return f"{n / (1 << 30):.2f} Gi"
-    if n >= 1 << 20:
-        return f"{n / (1 << 20):.2f} Mi"
-    if n >= 1 << 10:
-        return f"{n / (1 << 10):.2f} Ki"
-    return f"{n:.0f}"
-
-
-def print_table(rows, headers):
-    """Print a simple ASCII table."""
-    # compute column widths
-    widths = [len(h) for h in headers]
-    for r in rows:
-        for i, c in enumerate(r):
-            widths[i] = max(widths[i], len(str(c)))
-    # header
-    hdr = "  ".join(h.ljust(widths[i]) for i, h in enumerate(headers))
-    sep = "  ".join("-" * widths[i] for i in range(len(headers)))
-    print(hdr)
-    print(sep)
-    for r in rows:
-        print("  ".join(str(r[i]).ljust(widths[i]) for i in range(len(r))))
-    print()
-
-
-def get_all_filesystems(fsx):
-    """Return list of file systems (paginated)."""
-    out = []
-    paginator = fsx.get_paginator("describe_file_systems")
-    for page in paginator.paginate():
-        fss = page.get("FileSystems", [])
-        for fs in fss:
-            # only ONTAP
-            if fs.get("FileSystemType") == "ONTAP":
-                out.append(fs)
-    return out
-
-
-def get_volumes_for_fs(fsx, fs_id):
-    """Return list of volumes for a given filesystem id (handles pagination)."""
-    vols = []
-    paginator = fsx.get_paginator("describe_volumes")
-    for page in paginator.paginate(Filters=[{"Name": "file-system-id", "Values": [fs_id]}]):
-        vols.extend(page.get("Volumes", []))
-    return vols
-
-
-def safe_float(v):
-    try:
-        return float(v)
-    except Exception:
-        return 0.0
-
-
-def main():
-    fsx = boto3.client("fsx")
-
-    try:
-        filesystems = get_all_filesystems(fsx)
-    except Exception as e:
-        print("ERROR: cannot describe FSx filesystems:", e, file=sys.stderr)
-        sys.exit(1)
-
-    if not filesystems:
-        print("No FSx ONTAP filesystems found.")
-        return
-
-    for fs in filesystems:
-        fs_id = fs.get("FileSystemId", "-")
-        fs_name = fs.get("Name") or "-"
-        print(f"FileSystem: {fs_id}    Name: {fs_name}")
-
-        try:
-            volumes = get_volumes_for_fs(fsx, fs_id)
-        except Exception as e:
-            print(f"  ERROR: cannot describe volumes for {fs_id}: {e}\n")
-            continue
-
-        rows = []
-        for vol in volumes:
-            cap_prov = safe_float(vol.get("CapacityProvisioned"))
-            cap_used = safe_float(vol.get("CapacityUsed"))
-            # skip zero-provisioned volumes (avoid divide-by-zero)
-            if cap_prov <= 0:
-                continue
-            util = (cap_used / cap_prov) * 100.0
-            if util >= THRESHOLD_PERCENT:
-                name = vol.get("Name") or "-"
-                vid = vol.get("VolumeId") or "-"
-                rows.append([
-                    name,
-                    vid,
-                    human(cap_prov),
-                    human(cap_used),
-                    f"{util:.2f}%"
-                ])
-
-        if rows:
-            headers = ["Name", "VolumeId", "Provisioned", "Used", "Utilization"]
-            print_table(rows, headers)
-        else:
-            print(f"  No volumes >= {THRESHOLD_PERCENT:.0f}% utilization.\n")
-
-
-if __name__ == "__main__":
-    main()
-
-                
+    
+                    
